@@ -41,7 +41,7 @@ The file contains user message, short_main_idea, score (heart score), core_memor
 1. **Configuration**: Update `config.yaml` with your API credentials and preferred model
 2. **Run**: Execute the following command:
 ```bash
-   uv run Mayu.py
+   uv run app.py
 ```
 
 ## Requirements
