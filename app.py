@@ -315,7 +315,7 @@ if __name__ == "__main__":
     os.makedirs("user_log", exist_ok=True)
     demo = create_gradio_app()
     demo.launch(
-        #share=True,
+        share=True,
         server_name="0.0.0.0",
         server_port=7860,
         auth=("meb", "meb888")
