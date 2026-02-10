@@ -1,0 +1,3 @@
+api_key: "dummy"
+base_url: "http://localhost:8001/v1"
+model: "Qwen/Qwen3-14B"
