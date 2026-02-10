@@ -46,3 +46,4 @@ The file contains user message, short_main_idea, score (heart score), core_memor
 ## Improvement plans
 - Include Memvid for better memory management and recall
 - Include Agent-Lightning for prompt self-tuning
+- Include Langfuse for evaluation
