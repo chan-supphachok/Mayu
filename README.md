@@ -38,3 +38,7 @@ Mayu has an emotional engagement system with a heart level ranging from 0 (super
 - LangGraph
 - vLLM
 - TextBlob
+
+## Improvement plans
+- Include Memvid for better memory management and recall
+- Include Agent-Lightning for prompt self-tuning
