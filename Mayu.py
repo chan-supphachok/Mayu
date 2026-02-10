@@ -147,7 +147,7 @@ def build_graph():
 # Initialize the compiled graph
 app = build_graph()
 
-def create_initial_state() -> ChatState:
+def create_initial_state(session_id) -> ChatState:
     """Create initial state for a new conversation"""
     return {
         "message": "",
@@ -163,7 +163,7 @@ def create_initial_state() -> ChatState:
             "score": [],
             "core_memory": []
         }),
-        "session_id": str(uuid.uuid1())[-12:],
+        "session_id": session_id,
         "is_first_message": True
     }
 
@@ -192,7 +192,7 @@ def chat_pipeline(message: str, history: list, state_dict: dict):
     
     # Initialize state if first message (introduction)
     if state_dict is None:
-        state = create_initial_state()
+        state = create_initial_state(session_id)
         
         # Run the graph
         result = app.invoke(state)
@@ -230,7 +230,7 @@ def create_gradio_app():
         )
         
         # State to store conversation state
-        state = gr.State(None)
+        state = gr.State(value=None)
         
         # Chatbot interface
         chatbot = gr.Chatbot(
@@ -316,14 +316,43 @@ def create_gradio_app():
             return "", history, new_state, heart_md, memory_md, session_md
         
         def reset_chat():
-            """Reset the chat"""
-            return None, [], None, "### ❤️ ระดับหัวใจ: 3", "### 🧠 ความทรงจำหลัก: 0", "### 🆔 Session: -"
+            """Reset the chat with a new session ID"""
+            session_id = str(uuid.uuid4())[-12:]  # new session ID
+            new_state = create_initial_state(session_id)
+            
+            # Run the introduction node so Mayu greets the user immediately
+            result = app.invoke(new_state)
+            
+            # Return empty message, new chat history with greeting, new state, and updated displays
+            heart_md, memory_md, session_md = update_displays(result)
+            return (
+                None,  # clear textbox
+                [(None, result["current_response"])],  # chatbot history with greeting
+                state_to_dict(result),  # new state
+                heart_md,
+                memory_md,
+                session_md
+            )
+
         
         def initialize():
-            """Initialize chat with introduction"""
-            history, new_state = chat_pipeline("", [], None)
-            heart_md, memory_md, session_md = update_displays(new_state)
-            return history, new_state, heart_md, memory_md, session_md
+            """Initialize chat with a fresh session"""
+            session_id = str(uuid.uuid4())  # Use uuid4 instead of uuid1
+            new_state = create_initial_state(session_id)
+            
+            # Run introduction node so Mayu greets user
+            result = app.invoke(new_state)
+            result_dict = state_to_dict(result)
+            
+            # Update displays
+            heart_md, memory_md, session_md = update_displays(result_dict)
+            
+            print(f"🔵 NEW SESSION INITIALIZED: {session_id}")  # Debug print
+            
+            # Return initial chat history with Mayu greeting
+            return [(None, result["current_response"])], result_dict, heart_md, memory_md, session_md
+
+
         
         # Event handlers
         msg.submit(
@@ -346,7 +375,7 @@ def create_gradio_app():
         # Auto-trigger introduction on load
         demo.load(
             initialize,
-            outputs=[chatbot, state, heart_display, memory_display, session_display]
+            outputs=[chatbot, state, heart_display, memory_display, session_display],
         )
     
     return demo
@@ -360,4 +389,5 @@ if __name__ == "__main__":
         share=True,
         server_name="0.0.0.0",
         server_port=7860,
+        auth=("meb", "meb888")
     )
