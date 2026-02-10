@@ -1,3 +1,9 @@
+---
+title: Mayu
+app_file: app.py
+sdk: gradio
+sdk_version: 5.49.1
+---
 # Mayu Chatbot
 
 Mayu is a Thai language chatbot built on LangGraph with vLLM for inference. Users can customize the chatbot by modifying `config.yaml` to use their own API settings.

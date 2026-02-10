@@ -54,14 +54,14 @@ def evaluate_chat_node(state: ChatState) -> ChatState:
         row = pd.DataFrame({
             "user_msg": [user],
             "short_main_idea": [json_data["short_main_idea"]],
-            "score": [json_data["score"]], #legacy, not in use
+            "score": [json_data["score"]],
             "core_memory": [json_data["core_memory"]]
         })
         
         # Update DataFrame
         state["history_df"] = pd.concat([state["history_df"], row], ignore_index=True)
         
-        # Save to CSV
+        # Save to CSV - use session_id from state
         state["history_df"].to_csv(f"user_log/{state['session_id']}.csv", index=False)
         
         # Update short-term memory
@@ -71,19 +71,15 @@ def evaluate_chat_node(state: ChatState) -> ChatState:
             state["short_term_chat_history"].pop(0)
             state["short_term_chat_history"].append(json_data["short_main_idea"])
 
-        # increase heart score based on main_idea
-        blob = TextBlob(json_data["short_main_idea"])
-        score = round(blob.sentiment.polarity * 2)
+        # Update heart level based on score
         state["heart_level"] += int(json_data["score"])
         
         # Update core memory
         if json_data["core_memory"]:
             state["main_core_memory"].append(json_data["short_main_idea"])
-        
-        # Update heart level
 
-    
     return state
+
 
 def chat_with_mayu_node(state: ChatState) -> ChatState:
     """Generate Mayu's response"""
@@ -109,15 +105,11 @@ def chat_with_mayu_node(state: ChatState) -> ChatState:
     return state
 
 
-# Conditional edge function
 def should_introduce(state: ChatState) -> str:
     """Decide whether to introduce or process message"""
-    if state.get("is_first_message", True):
-        return "introduction"
-    else:
-        return "evaluate"
+    return "introduction" if state.get("is_first_message", True) else "evaluate"
 
-# Build the graph
+
 def build_graph():
     """Build the LangGraph workflow"""
     workflow = StateGraph(ChatState)
@@ -141,13 +133,14 @@ def build_graph():
     workflow.add_edge("evaluate", "chat")
     workflow.add_edge("chat", END)
     
-    # Compile the graph
     return workflow.compile()
 
-# Initialize the compiled graph
+
+# Initialize the compiled graph once
 app = build_graph()
 
-def create_initial_state(session_id) -> ChatState:
+
+def create_initial_state(session_id: str) -> ChatState:
     """Create initial state for a new conversation"""
     return {
         "message": "",
@@ -167,6 +160,7 @@ def create_initial_state(session_id) -> ChatState:
         "is_first_message": True
     }
 
+
 def state_to_dict(state: ChatState) -> dict:
     """Convert ChatState to serializable dict for Gradio State"""
     return {
@@ -182,24 +176,21 @@ def state_to_dict(state: ChatState) -> dict:
         'is_first_message': state['is_first_message']
     }
 
+
 def dict_to_state(state_dict: dict) -> ChatState:
     """Convert dict back to ChatState"""
     state_dict['history_df'] = pd.DataFrame(state_dict['history_df'])
     return state_dict
+
 
 def chat_pipeline(message: str, history: list, state_dict: dict):
     """Main chat pipeline using LangGraph"""
     
     # Initialize state if first message (introduction)
     if state_dict is None:
-        state = create_initial_state(session_id)
-        
-        # Run the graph
+        state = create_initial_state(str(uuid.uuid4()))
         result = app.invoke(state)
-        
-        # Add to history
         history.append((None, result["current_response"]))
-        
         return history, state_to_dict(result)
     
     # Reconstruct state from dict
@@ -209,30 +200,55 @@ def chat_pipeline(message: str, history: list, state_dict: dict):
     # Run the graph
     result = app.invoke(state)
     
-    # Add user message and bot response to history
+    # Add to history
     history.append((message, result["current_response"]))
-    
-    # Update full history list
-    result["history"].append(f"User: {message}")
-    result["history"].append(f"Mayu: {result['current_response']}")
+    result["history"].extend([f"User: {message}", f"Mayu: {result['current_response']}"])
     
     return history, state_to_dict(result)
+
+
+def get_heart_status(level: int) -> tuple[str, str]:
+    """Get heart emoji and status based on level"""
+    if level <= 0:
+        return "💔", "ไม่ชอบมาก"
+    elif level <= 2:
+        return "🖤", "ไม่ค่อยชอบ"
+    elif level <= 5:
+        return "🤍", "เฉยๆ"
+    elif level <= 8:
+        return "💗", "เริ่มชอบ"
+    else:
+        return "❤️" * min(3, level // 3), "ชอบมาก!"
+
+
+def update_displays(state_dict: dict) -> tuple[str, str, str]:
+    """Update all display elements"""
+    if state_dict is None:
+        return (
+            "### ❤️ ระดับหัวใจ: 3",
+            "### 🧠 ความทรงจำหลัก: 0",
+            "### 🆔 Session: -"
+        )
+    
+    level = state_dict['heart_level']
+    hearts, status = get_heart_status(level)
+    
+    heart_md = f"### {hearts} ระดับหัวใจ: {level} ({status})"
+    memory_md = f"### 🧠 ความทรงจำหลัก: {len(state_dict['main_core_memory'])}"
+    session_md = f"### 🆔 Session: {state_dict['session_id'][:8]}..."  # Show only first 8 chars
+    
+    return heart_md, memory_md, session_md
+
 
 def create_gradio_app():
     """Create the Gradio interface"""
     gr.set_static_paths(paths=["assets/"])
     
     with gr.Blocks(title="Chat with Mayu 💕", theme=gr.themes.Soft()) as demo:
-        gr.Markdown(
-            """
-            # 💕 Chat with Mayu
-            """
-        )
+        gr.Markdown("# 💕 Chat with Mayu")
         
-        # State to store conversation state
         state = gr.State(value=None)
         
-        # Chatbot interface
         chatbot = gr.Chatbot(
             height=500,
             label="Mayu 🌸",
@@ -254,7 +270,6 @@ def create_gradio_app():
         with gr.Row():
             clear_btn = gr.Button("🔄 เริ่มใหม่", variant="secondary")
         
-        # Display stats
         with gr.Row():
             with gr.Column():
                 heart_display = gr.Markdown("### ❤️ ระดับหัวใจ: 3")
@@ -263,130 +278,44 @@ def create_gradio_app():
             with gr.Column():
                 session_display = gr.Markdown("### 🆔 Session: -")
         
-        def update_displays(state_dict):
-            """Update all display elements"""
-            if state_dict is None:
-                return (
-                    "### ❤️ ระดับหัวใจ: 3",
-                    "### 🧠 ความทรงจำหลัก: 0",
-                    "### 🆔 Session: -"
-                )
-            
-            level = state_dict['heart_level']
-            
-            # Heart display with emoji
-            if level <= 0:
-                hearts = "💔"
-                status = "ไม่ชอบมาก"
-            elif level <= 2:
-                hearts = "🖤"
-                status = "ไม่ค่อยชอบ"
-            elif level <= 5:
-                hearts = "🤍"
-                status = "เฉยๆ"
-            elif level <= 8:
-                hearts = "💗"
-                status = "เริ่มชอบ"
-            else:
-                hearts = "❤️" * min(3, level // 3)
-                status = "ชอบมาก!"
-            
-            heart_md = f"### {hearts} ระดับหัวใจ: {level} ({status})"
-            
-            # Memory display
-            core_mem_count = len(state_dict['main_core_memory'])
-            memory_md = f"### 🧠 ความทรงจำหลัก: {core_mem_count}"
-            
-            # Session display
-            session_md = f"### 🆔 Session: {state_dict['session_id']}"
-            
-            return heart_md, memory_md, session_md
-        
         def respond(message, chat_history, state_dict):
             """Handle user message"""
-            # Create user_log directory if it doesn't exist
             os.makedirs("user_log", exist_ok=True)
-            
-            # Run pipeline
             history, new_state = chat_pipeline(message, chat_history, state_dict)
-            
-            # Update displays
-            heart_md, memory_md, session_md = update_displays(new_state)
-            
-            return "", history, new_state, heart_md, memory_md, session_md
+            displays = update_displays(new_state)
+            return "", history, new_state, *displays
         
         def reset_chat():
-            """Reset the chat with a new session ID"""
-            session_id = str(uuid.uuid4())[-12:]  # new session ID
-            new_state = create_initial_state(session_id)
-            
-            # Run the introduction node so Mayu greets the user immediately
-            result = app.invoke(new_state)
-            
-            # Return empty message, new chat history with greeting, new state, and updated displays
-            heart_md, memory_md, session_md = update_displays(result)
-            return (
-                None,  # clear textbox
-                [(None, result["current_response"])],  # chatbot history with greeting
-                state_to_dict(result),  # new state
-                heart_md,
-                memory_md,
-                session_md
-            )
-
-        
-        def initialize():
-            """Initialize chat with a fresh session"""
-            session_id = str(uuid.uuid4())  # Use uuid4 instead of uuid1
-            new_state = create_initial_state(session_id)
-            
-            # Run introduction node so Mayu greets user
+            """Reset the chat with a new session"""
+            new_state = create_initial_state(str(uuid.uuid4()))
             result = app.invoke(new_state)
             result_dict = state_to_dict(result)
-            
-            # Update displays
-            heart_md, memory_md, session_md = update_displays(result_dict)
-            
-            print(f"🔵 NEW SESSION INITIALIZED: {session_id}")  # Debug print
-            
-            # Return initial chat history with Mayu greeting
-            return [(None, result["current_response"])], result_dict, heart_md, memory_md, session_md
-
-
+            displays = update_displays(result_dict)
+            return None, [(None, result["current_response"])], result_dict, *displays
+        
+        def initialize():
+            """Initialize chat with greeting"""
+            new_state = create_initial_state(str(uuid.uuid4()))
+            result = app.invoke(new_state)
+            result_dict = state_to_dict(result)
+            displays = update_displays(result_dict)
+            print(f"🔵 NEW SESSION: {result_dict['session_id']}")
+            return [(None, result["current_response"])], result_dict, *displays
         
         # Event handlers
-        msg.submit(
-            respond,
-            inputs=[msg, chatbot, state],
-            outputs=[msg, chatbot, state, heart_display, memory_display, session_display]
-        )
-        
-        send_btn.click(
-            respond,
-            inputs=[msg, chatbot, state],
-            outputs=[msg, chatbot, state, heart_display, memory_display, session_display]
-        )
-        
-        clear_btn.click(
-            reset_chat,
-            outputs=[msg, chatbot, state, heart_display, memory_display, session_display]
-        )
-        
-        # Auto-trigger introduction on load
-        demo.load(
-            initialize,
-            outputs=[chatbot, state, heart_display, memory_display, session_display],
-        )
+        msg.submit(respond, [msg, chatbot, state], [msg, chatbot, state, heart_display, memory_display, session_display])
+        send_btn.click(respond, [msg, chatbot, state], [msg, chatbot, state, heart_display, memory_display, session_display])
+        clear_btn.click(reset_chat, outputs=[msg, chatbot, state, heart_display, memory_display, session_display])
+        demo.load(initialize, outputs=[chatbot, state, heart_display, memory_display, session_display])
     
     return demo
 
+
 if __name__ == "__main__":
-    # Make sure user_log directory exists
     os.makedirs("user_log", exist_ok=True)
-    
     demo = create_gradio_app()
     demo.launch(
-        share=True,
+        #share=True,
         server_name="0.0.0.0",
         server_port=7860,
         auth=("meb", "meb888")
