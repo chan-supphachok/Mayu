@@ -22,6 +22,10 @@ Mayu has an emotional engagement system with a heart level ranging from 0 (super
 - **Evaluation Method**: Hybrid approach combining:
   - LLM-based prompt analysis (digests user input into main ideas)
   - TextBlob NLP processing for sentiment analysis
+ 
+### Logging system
+Mayu will keep the conversation log by session id (in case user session is developed in the future) in csv format.
+The file contains user message, short_main_idea, score (heart score), core_memory (True or False)
 
 ### Configurable Settings
 - `short_term_chat_history_num`: Number of recent memories to retain (default: 10)
